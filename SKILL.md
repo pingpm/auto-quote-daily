@@ -26,7 +26,17 @@ auto-quote ask --date YYYY-MM-DD --question "哪个渠道的自动报价率最�
 auto-quote query --date YYYY-MM-DD --group-by channel
 ```
 
-`daily` refreshes the requested day, calculates automatic line updates, and writes the daily HTML dashboard and Markdown report to `outputs/MMDD_api_analysis/`. `weekly` refreshes every inclusive date in the range before generating the weekly dashboard. Do not reuse an old daily page or summary as a substitute for a refresh.
+`daily` refreshes the requested day AND its preceding 14 calendar days (15 inclusive days), then calculates automatic line updates for the report day and writes its HTML dashboard and Markdown report to `outputs/MMDD_api_analysis/`. `weekly` refreshes every inclusive date in the requested range before generating the weekly dashboard. Do not reuse an old daily page or summary as a substitute for a refresh.
+
+## Required 15-Day History
+
+Every new daily analysis must fetch and validate all 15 days before building the report or generating AI analysis. This is required even on a new installation and even when local historical snapshots already exist, because historical orders can acquire new deal statuses and confirmed costs. For a report dated `2026-10-12`, the inclusive history is `2026-09-28` through `2026-10-12`, not the 15 days before the report day and not a window ending on the execution date.
+
+For each date, refresh retail orders, query records, bid groups, carrier details and the other collector enrichment inputs, and persist `summary_YYYYMMDD.json`, `matched_orders_YYYYMMDD.json`, `raw_bid_groups_YYYYMMDD.json`, `raw_bid_group_carriers_YYYYMMDD.json` and `enrich_errors_YYYYMMDD.json`. All dates must have matching summary dates and empty enrichment errors. A genuine zero-order day still has complete snapshots and occupies a point in the time series; missing or failed dates must not be filled with zero or silently skipped.
+
+The bundled `daily` command performs this refresh automatically. Do not replace it with a single-day collector invocation. After it succeeds, check that the operational-analysis context contains exactly 15 consecutive history dates ending on the report date and that the overview, automatic-quote, secondary-bid and price-comparison trends use this range. If any date fails, resolve that date and rerun; do not deliver a partially refreshed report as complete. Generate AI conclusions only after the history is complete; regenerate old conclusions when the refreshed context fingerprint changes. Historical deal cohorts have different observation durations even when fetched in the same run.
+
+The report day's core metrics still use only that day's orders. Historical data supplies trends and analysis context, not the daily metric denominator. Presentation-only `rebuild` continues to use saved data without API requests; it does not fill missing history. Older runtime versions must be upgraded to obtain the automatic refresh behavior.
 
 `rebuild` and `rebuild-weekly` read saved snapshots without API requests. `diagnose` fetches evidence for the Top10 absolute price differences and rebuilds the daily dashboard; use it when an anomaly investigation is requested or required for a full analysis report. The bundled API reference covers those endpoints. Resolve collector enrichment errors before delivering a report. Per-order diagnosis errors remain visible as evidence limitations and do not block the factual dashboard.
 

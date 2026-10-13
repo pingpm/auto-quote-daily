@@ -4,10 +4,10 @@
 
 ## 安装
 
-需要 Python 3.10 或以上版本。私有仓库需要先使用有仓库访问权限的 GitHub 账号登录；仓库链接本身不会授予访问权限。
+需要 Python 3.10 或以上版本。仓库已公开，可以直接下载源码或安装包；使用 DMS 接口仍需本地授权。
 
 ```bash
-gh repo clone pingpm/auto-quote-daily
+git clone https://github.com/pingpm/auto-quote-daily.git
 cd auto-quote-daily
 python3 -m venv .venv
 source .venv/bin/activate
@@ -19,7 +19,9 @@ python scripts/install_skill.py
 
 也可以让 Codex 的 `skill-installer` 从 GitHub 仓库根目录安装本 skill，然后在 Python 虚拟环境中运行 `python -m pip install /path/to/installed/auto-quote-daily`。安装 skill 指令与安装 Python 运行依赖是两个步骤。
 
-Release 中的 ZIP 包可解压后按相同步骤安装；wheel 可用 `python -m pip install /path/to/auto_quote_daily-1.0.0-py3-none-any.whl` 安装 CLI，但仍需安装 ZIP 中的 skill 指令和 references。
+Release 中的 ZIP 包可解压后按相同步骤安装；wheel 可用 `python -m pip install /path/to/auto_quote_daily-1.1.0-py3-none-any.whl` 安装 CLI，但仍需安装 ZIP 中的 skill 指令和 references。
+
+已有安装需要同时更新 skill 指令、references 和 Python runtime；只更新 `SKILL.md` 不会改变旧 CLI 的拉数范围。从仓库安装的运行环境可执行 `git pull` 后运行 `python -m pip install --upgrade .`；同步已安装 skill 的同名资源前先检查本地修改，保留本地授权配置和数据工作目录。
 
 ## 本地授权
 
@@ -43,6 +45,10 @@ auto-quote --workspace /path/to/local-analysis ask --date 2026-10-09 --question 
 ```
 
 `daily` 和 `weekly` 会重新调用接口。日报输出到工作目录下的 `outputs/MMDD_api_analysis/`，线路维护快照在 `outputs/MMDD_auto_bid_line_updates/`，周期看板在 `outputs/YYYYMMDD_YYYYMMDD_weekly_analysis/`。一天的周期输出到 `outputs/YYYYMMDD_daily_dashboard/`。日期目录保留现有模板格式，跨年请使用不同工作目录，以免同一月日的 HTML 互相覆盖。
+
+**从 v1.1.0 起，`daily` 默认重新拉取日报日期及前 14 天，共 15 天。** 例如 `daily --date 2026-10-12` 会刷新 `2026-09-28` 至 `2026-10-12`。已有历史文件也会刷新；新安装无需先手动补数。每一天都要有完整订单、查价、竞价及承运商快照并通过校验，完成后才生成当日日报和 AI 分析数据包。某天失败时命令停止，不能把缺失日期当作零订单；真实零订单日期仍保留趋势点。日报核心指标仍只统计指定日期，历史数据仅用于趋势和分析。线路维护统计只刷新报告日，不重复拉取 15 份全量线路库。
+
+`weekly` 保持用户指定区间的刷新范围。`rebuild` 只读取本地数据，不会补齐历史；新日报请使用 `daily`。AI 分析完成前应确认 context 的 `history` 包含以报告日结尾的连续 15 天。
 
 页面修改或 AI 分析完成后，用本地快照重建，以下命令不请求接口：
 

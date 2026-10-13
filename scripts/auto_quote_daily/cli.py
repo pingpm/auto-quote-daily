@@ -22,6 +22,7 @@ MATCH_WINDOW_BEFORE = timedelta(minutes=5)
 MATCH_WINDOW_AFTER = timedelta(minutes=30)
 DEAL_STATUSES = {2, 3, 4}
 PAGE_SIZE = 1000
+DAILY_HISTORY_DAYS = 15
 PROJECT_ROOT = Path(os.environ.get("AUTO_QUOTE_WORKSPACE", Path.cwd())).expanduser().resolve()
 
 
@@ -356,6 +357,9 @@ def ensure_complete(analysis_date: date) -> None:
     errors = json.loads((folder / f"enrich_errors_{analysis_date:%Y%m%d}.json").read_text(encoding="utf-8"))
     if errors:
         raise RuntimeError(f"Collection has {len(errors)} enrichment errors for {analysis_date}. Resolve them before reporting.")
+    summary = json.loads((folder / f"summary_{analysis_date:%Y%m%d}.json").read_text(encoding="utf-8"))
+    if summary.get("date") != analysis_date.isoformat():
+        raise RuntimeError(f"Snapshot date does not match {analysis_date}. Refresh this date before reporting.")
 
 
 def run_rebuild(args: argparse.Namespace) -> int:
@@ -389,14 +393,21 @@ def run_rebuild_weekly(args: argparse.Namespace) -> int:
 def run_daily(args: argparse.Namespace) -> int:
     analysis_date = date.fromisoformat(args.date)
     scripts = project_scripts()
+    history_start = analysis_date - timedelta(days=DAILY_HISTORY_DAYS - 1)
+    for offset in range(DAILY_HISTORY_DAYS):
+        day = history_start + timedelta(days=offset)
+        environment = project_environment(day)
+        print(f"Refreshing daily history {offset + 1}/{DAILY_HISTORY_DAYS}: {day}", flush=True)
+        run_project_script(scripts["analysis"], environment)
+        ensure_complete(day)
     environment = project_environment(analysis_date)
-    run_project_script(scripts["analysis"], environment)
-    ensure_complete(analysis_date)
     run_project_script(scripts["line_updates"], environment)
     run_project_script(scripts["dashboard"], environment)
     folder = PROJECT_ROOT / "outputs" / f"{analysis_date:%m%d}_api_analysis"
     dashboard = folder / f"{analysis_date:%m%d}_visual_dashboard.html"
     print(json.dumps({"date": args.date, "output": str(folder), "dashboard": str(dashboard),
+                      "history_start": history_start.isoformat(), "history_end": args.date,
+                      "history_days": DAILY_HISTORY_DAYS,
                       "analysis_context": str(folder / f"operational_analysis_context_{analysis_date:%Y%m%d}.json"),
                       "operational_analysis": str(folder / f"operational_analysis_{analysis_date:%Y%m%d}.json")}, ensure_ascii=False, indent=2))
     return 0
@@ -497,7 +508,7 @@ def parse_args() -> argparse.Namespace:
     today = date.today().isoformat()
     auth = subparsers.add_parser("auth-check", help="Validate the locally configured DMS token")
     auth.add_argument("--date", default=today)
-    daily = subparsers.add_parser("daily", help="Refresh one day and generate its dashboard")
+    daily = subparsers.add_parser("daily", help="Refresh the report day and preceding 14 days, then generate its dashboard")
     daily.add_argument("--date", required=True)
     rebuild = subparsers.add_parser("rebuild", help="Rebuild a daily dashboard from local snapshots without API requests")
     rebuild.add_argument("--date", required=True)

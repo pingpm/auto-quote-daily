@@ -4,8 +4,8 @@
 
 ## 执行流程
 
-1. 完成用户要求的数据刷新、指标计算及校验，运行日报构建脚本。
-2. 读取 `outputs/MMDD_api_analysis/operational_analysis_context_YYYYMMDD.json`，以及本文件的提示词。数据包包含事实指标、维度分布、历史趋势、异常证据及限制；事实指标是结论引用依据。
+1. 新日报先通过 `daily` 刷新分析日期及前14天的完整数据，逐日通过校验后运行日报构建脚本。不能只拉取报告日或只读取旧的历史汇总；仅调整既有页面样式时可使用已保存数据。
+2. 读取 `outputs/MMDD_api_analysis/operational_analysis_context_YYYYMMDD.json`，以及本文件的提示词。新日报确认 `history` 有连续15天、最后一天等于分析日期，不能对缺失日期补零后分析。数据包包含事实指标、维度分布、历史趋势、异常证据及限制；事实指标是结论引用依据。
 3. 综合分析所有维度，选出值得关注的问题。需要额外证据时读取已保存明细，不默认推测原因；若补充数据或诊断，重新构建数据包后再生成分析。
 4. 将 JSON 结果保存到同目录 `operational_analysis_YYYYMMDD.json`，使用数据包原样的 `date` 和 `dataFingerprint`。`generatedAt` 使用实际分析时间及 `+08:00` 时区，不能当成数据刷新时间。
 5. 再运行 `auto-quote --workspace /path/to/local-analysis rebuild --date YYYY-MM-DD`。确认输出“运营分析：已校验并展示”，检查看板中的结论与行动。

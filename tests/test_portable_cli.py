@@ -117,6 +117,7 @@ class PortableCliTest(unittest.TestCase):
         self.assertEqual(environment["DMS_ACCESS_TOKEN"], "synthetic-test-only")
 
     def test_daily_refresh_against_local_synthetic_api(self):
+        from datetime import date, timedelta
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from threading import Thread
 
@@ -140,6 +141,7 @@ class PortableCliTest(unittest.TestCase):
         thread.start()
         self.env["DMS_ACCESS_TOKEN"] = "synthetic-test-only"
         self.env["DMS_BASE_URL"] = f"http://127.0.0.1:{server.server_port}"
+        cached_folder = self.snapshots("2026-10-08")
         try:
             result = self.cli("daily", "--date", "2026-10-09")
         finally:
@@ -152,7 +154,65 @@ class PortableCliTest(unittest.TestCase):
             "/dms-boot/autoBidLine/getLineList",
         })
         self.assertTrue(all(token == "synthetic-test-only" for _, _, token in requests_seen))
-        self.assertTrue((self.workspace / "outputs" / "1009_api_analysis" / "1009_visual_dashboard.html").is_file())
+        expected_dates = [(date(2026, 9, 25) + timedelta(days=offset)).isoformat() for offset in range(15)]
+        order_dates = [payload["startDate"].split()[0] for path, payload, _ in requests_seen
+                       if path.endswith("toRetail/getOrderList")]
+        query_dates = [payload["startCreateTime"] for path, payload, _ in requests_seen
+                       if path.endswith("autoPrice/getQueryList")]
+        self.assertEqual(order_dates, expected_dates)
+        self.assertEqual(query_dates, expected_dates)
+        self.assertEqual(sum(path.endswith("autoBidLine/getLineList") for path, _, _ in requests_seen), 1)
+        self.assertEqual(json.loads((cached_folder / "summary_20261008.json").read_text())["order_count"], 0)
+        folder = self.workspace / "outputs" / "1009_api_analysis"
+        context = json.loads((folder / "operational_analysis_context_20261009.json").read_text())
+        self.assertEqual([day["date"] for day in context["history"]], expected_dates)
+        self.assertTrue(all(day["order_count"] == 0 for day in context["history"]))
+        soup = BeautifulSoup((folder / "1009_visual_dashboard.html").read_text(), "html.parser")
+        chart = json.loads(soup.select_one('[data-metric="auto-quote-trend"] [data-chart]')["data-chart"])
+        self.assertEqual(chart["xAxis"]["data"], [day[5:] for day in expected_dates])
+
+    def test_daily_history_crosses_year_boundary_and_builds_after_all_dates(self):
+        from argparse import Namespace
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from auto_quote_daily import cli
+
+        with patch.object(cli, "PROJECT_ROOT", self.workspace), \
+             patch.object(cli, "settings", return_value=("synthetic-test-only", "http://127.0.0.1")), \
+             patch.object(cli, "ensure_complete") as validate, \
+             patch.object(cli, "run_project_script") as run, redirect_stdout(StringIO()):
+            cli.run_daily(Namespace(date="2026-01-03"))
+        calls = run.call_args_list
+        self.assertEqual(len(calls), 17)
+        self.assertTrue(all(call.args[0].stem == "analyze_0708_api_metrics" for call in calls[:15]))
+        self.assertEqual(calls[0].args[1]["ANALYSIS_DATE"], "2025-12-20")
+        self.assertEqual(calls[14].args[1]["ANALYSIS_DATE"], "2026-01-03")
+        self.assertEqual([call.args[0] for call in validate.call_args_list],
+                         [cli.date.fromisoformat(call.args[1]["ANALYSIS_DATE"]) for call in calls[:15]])
+        self.assertEqual(calls[15].args[0].stem, "analyze_auto_bid_line_updates")
+        self.assertEqual(calls[16].args[0].stem, "build_0708_visual_dashboard")
+        self.assertTrue(all(call.args[1]["ANALYSIS_DATE"] == "2026-01-03" for call in calls[15:]))
+
+    def test_history_collection_error_prevents_report_generation(self):
+        from argparse import Namespace
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from unittest.mock import patch
+        from auto_quote_daily import cli
+
+        def validate(day):
+            if day == cli.date(2025, 12, 21):
+                raise RuntimeError("synthetic enrichment error")
+
+        with patch.object(cli, "PROJECT_ROOT", self.workspace), \
+             patch.object(cli, "settings", return_value=("synthetic-test-only", "http://127.0.0.1")), \
+             patch.object(cli, "ensure_complete", side_effect=validate), \
+             patch.object(cli, "run_project_script") as run, redirect_stdout(StringIO()):
+            with self.assertRaisesRegex(RuntimeError, "synthetic enrichment error"):
+                cli.run_daily(Namespace(date="2026-01-03"))
+        self.assertEqual(len(run.call_args_list), 2)
+        self.assertTrue(all(call.args[0].stem == "analyze_0708_api_metrics" for call in run.call_args_list))
 
 
 if __name__ == "__main__":
