@@ -1,0 +1,5 @@
+include SKILL.md AGENTS.md README.md
+recursive-include references *.md
+recursive-include tests *.py
+include scripts/install_skill.py
+include scripts/build_release.py

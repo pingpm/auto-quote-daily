@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auto-quote-daily"
+version = "1.0.0"
+description = "Standalone DMS automatic quotation daily and weekly reporting skill"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31,<3"]
+
+[project.optional-dependencies]
+test = ["beautifulsoup4>=4.12,<5"]
+spreadsheets = ["pandas>=2.0,<3", "openpyxl>=3.1,<4"]
+
+[project.scripts]
+auto-quote = "auto_quote_daily.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
+include = ["auto_quote_daily*"]
